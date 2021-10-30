@@ -1,3 +1,13 @@
+# MAC OS
+.DS_Store
+
+# Images
+*.tif
+*.png
+
+# Annotations
+annotations
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
