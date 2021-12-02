@@ -5,6 +5,11 @@
 *.tif
 *.png
 
+# Experiment results
+checkpoints
+logs
+
+
 # Annotations
 annotations
 
