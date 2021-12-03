@@ -34,6 +34,7 @@ class SartoriusDataset:
         batch_size: int = 16,
         parse_shape: tuple = (520, 704),
         resize_shape: tuple = None,
+        resize_image_only: bool = False,
         augmentations: list = None,
         shuffle: bool = True,
         shuffle_buffer_size: int = int(1e5),
@@ -44,6 +45,7 @@ class SartoriusDataset:
         self.mask_parse_shape = parse_shape + (1,)
 
         self.resize_shape = resize_shape
+        self.resize_image_only = resize_image_only
         self.augmentations = augmentations or []
         self.shuffle = shuffle
         self.shuffle_buffer_size = shuffle_buffer_size
@@ -97,7 +99,9 @@ class SartoriusDataset:
 
             if self.resize_shape is not None:
                 image = _resize_image(image, self.resize_shape)
-                mask = _resize_image(mask, self.resize_shape)
+
+                if not self.resize_image_only:
+                    mask = _resize_image(mask, self.resize_shape)
 
             return image, mask
 

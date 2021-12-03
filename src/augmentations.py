@@ -11,11 +11,16 @@ class Augmentation:
         self.apply_mask = apply_mask
 
     def __call__(self, *images):
-        return tf.cond(
-            tf.random.uniform([], 0, 1, tf.float32) > (1 - self.prob),
-            lambda: tuple((self.fn(image) for image in images)),
+        x = tf.cond(
+            tf.random.uniform([], 0, 1, tf.float32) <= self.prob,
+            lambda: tuple([self.fn(image) for image in images]),
             lambda: images
         )
+
+        if type(x) in [list, tuple] and len(x) == 1:
+            return x[0]
+
+        return x
 
 
 class RandomBrigthness(Augmentation):
