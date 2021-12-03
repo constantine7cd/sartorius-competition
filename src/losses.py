@@ -58,7 +58,73 @@ def contrastive_loss(y_true, y_pred,
     if sample_size is not None:
         mask = _generate_sample_mask([b, sp_size], sample_size)
     else:
-        mask = tf.ones([b, sp_size], dtype=tf.float32)
+        mask = tf.ones([b, sp_size], dtype=tf.bool)
+
+    loss = tf.map_fn(
+        wrapper,
+        (y_true, y_pred, mask),
+        fn_output_signature=tf.float32
+    )
+
+    return tf.reduce_mean(loss)
+
+
+def flatten(x):
+    return tf.reshape(x, [-1])
+
+
+def _generate_random_patch_mask(shape, w_size):
+    b, h, w = shape
+
+    x_coord = tf.random.uniform((b, 1), 0, w - w_size, dtype=tf.int64) 
+    x_coord = x_coord + tf.range(w_size, dtype=tf.int64)[None, :]
+
+    y_coord = tf.random.uniform((b, 1), 0, h - w_size, dtype=tf.int64) 
+    y_coord = y_coord + tf.range(w_size, dtype=tf.int64)[None, :]
+
+    def build_indices(x_coord, y_coord):
+        xx, yy = tf.meshgrid(x_coord, y_coord)
+        indices = tf.concat([flatten(yy)[:, None], flatten(xx)[:, None]], axis=-1)
+
+        return indices
+
+    def compute_mask(inputs):
+        x_coord, y_coord = inputs
+
+        indices = build_indices(x_coord, y_coord)
+        mask = tf.SparseTensor(indices, 
+                               tf.ones(indices.shape[0], dtype=tf.bool), 
+                               [h, w])
+
+        return tf.sparse.to_dense(mask)
+
+    mask = tf.map_fn(
+        compute_mask, 
+        (x_coord, y_coord), 
+        fn_output_signature=tf.bool
+    )
+
+    return mask
+
+
+def contrastive_loss_on_patches(y_true, y_pred,
+                                normalize_preds=True, 
+                                temperature=0.2, 
+                                window_size=80):
+    def wrapper(inputs):
+        y_true, y_pred, mask = inputs
+
+        return _contrastive_loss(y_true, y_pred, mask, temperature)
+
+    if normalize_preds:
+        y_pred = tf.nn.l2_normalize(y_pred, axis=-1)
+
+    b, h, w, _ = tf.unstack(tf.shape(y_pred, out_type=tf.int64))
+
+    if window_size is not None:
+        mask = _generate_random_patch_mask([b, h, w], window_size)
+    else:
+        mask = tf.ones([b, h, w], dtype=tf.bool)
 
     loss = tf.map_fn(
         wrapper,
@@ -83,4 +149,21 @@ class ContrastiveLoss(LossFunctionWrapper):
             normalize_preds=normalize_preds,
             temperature=temperature,
             sample_size=sample_size
+        )
+
+
+class ContrastiveLossOnPatches(LossFunctionWrapper):
+    def __init__(
+        self,
+        normalize_preds=True,
+        temperature=0.2,
+        window_size=85
+    ):
+        super().__init__(
+            contrastive_loss_on_patches,
+            reduction=tf.keras.losses.Reduction.NONE,
+            name='ContrastiveLossOnPatches',
+            normalize_preds=normalize_preds,
+            temperature=temperature,
+            window_size=window_size
         )
