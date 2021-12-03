@@ -42,8 +42,13 @@ After obtaining embeddings the postprocessing should be applied to get instance 
  - obtain instance labels with erosion + measure.label (scikit-image) method
  - upsample with Nearest Neighbor approach to original resolution
 
-Another postprocessing approach was designed too (you may find implementation in Results.ipynb) but the obtained results are much worse. The postprocessing pipeline is in progress. The results of obtained instance segmentation masks:
+Another postprocessing approach was designed too (you may find implementation in Results.ipynb) but the obtained results are much worse. The postprocessing pipeline is in progress. The results of obtained instance segmentation masks, ground truth:
 
+![alt text](images/masks_gt_vis.png "GT instance segmentation")
+
+Predictions: 
+
+![alt text](images/masks_pred_vis.png "GT instance segmentation")
 
 
 
