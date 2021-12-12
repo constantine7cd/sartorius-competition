@@ -33,8 +33,9 @@ Another approach that wasn't mentioned before is binary pixelwise contrastive lo
 
 *Postprocessing and results*. During the inference model predicts embedding (the optimal size is 8 obtained during experiments) for each pixel. The picture below shows visualizations of embeddings (PCA dimension reduction used to obtain RGB visualizations): 
 
-![alt text](images/pca_vis.png "PCA visualizations")
-
+<p align="center">
+ <img src="images/pca_vis.png">
+</p>
 
 After obtaining embeddings the postprocessing should be applied to get instance segmentation masks. The postprocessing is the following: 
  - resize embeddings image to 160x128
@@ -42,13 +43,21 @@ After obtaining embeddings the postprocessing should be applied to get instance 
  - obtain instance labels with erosion + measure.label (scikit-image) method
  - upsample with Nearest Neighbor approach to original resolution
 
-Another postprocessing approach was designed too (you may find implementation in Results.ipynb) but the obtained results are much worse. The postprocessing pipeline is in progress. The results of obtained instance segmentation masks, ground truth:
+Another postprocessing approach was designed too (you may find implementation in Results.ipynb) but the obtained results are much worse. The postprocessing pipeline is in progress. The results of obtained instance segmentation masks, 
 
-![alt text](images/masks_gt_vis.png "GT instance segmentation")
+**Ground truth:**
 
-Predictions: 
+<p align="center">
+ <img src="images/masks_gt_vis.png">
+</p>
+<!-- ![alt text](images/masks_gt_vis.png "GT instance segmentation") -->
 
-![alt text](images/masks_pred_vis.png "GT instance segmentation")
+**Predictions:** 
+
+<p align="center">
+ <img src="images/masks_pred_vis.png">
+</p>
+<!-- ![alt text](images/masks_pred_vis.png "Predicted instance segmentation") -->
 
 
 
