@@ -217,17 +217,19 @@ def contrastive_loss_with_bboxes(
 
 
 def _sample_indices(min_idx, max_idx, num_samples, replace=False):
+    n_sample = tf.reduce_min([max_idx - min_idx + 1, num_samples])
+
     if not replace:
-        indices = tf.range(min_idx, max_idx, dtype=tf.int32)
+        indices = tf.range(min_idx, max_idx + 1, dtype=tf.int32)
         indices = tf.random.shuffle(indices)
 
-        return indices[:num_samples]
+        return indices[:n_sample]
 
     return tf.random.categorical(
         tf.ones([1, max_idx - min_idx + 1]),
-        num_samples,
+        n_sample,
         dtype=tf.int32
-    )[0]
+    )[0] + min_idx
 
 
 def _tf_morphs(func, x, kernel):
