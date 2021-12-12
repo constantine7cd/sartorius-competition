@@ -1,6 +1,9 @@
 # MAC OS
 .DS_Store
 
+# Archives
+*.zip
+
 # Images
 *.tif
 *.png
@@ -9,6 +12,9 @@
 checkpoints
 logs
 
+# Saved models
+saved_model
+*.h5
 
 # Annotations
 annotations
