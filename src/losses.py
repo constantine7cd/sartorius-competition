@@ -1,5 +1,3 @@
-from functools import partial
-
 import numpy as np
 import tensorflow as tf
 from skimage.measure import regionprops

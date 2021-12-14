@@ -1,10 +1,17 @@
 import math
+import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
+
+# TODO: rebuild MRCNN library after
+# TODO: debug is being finished
+sys.path.append('../../Mask_RCNN')
+
+from mrcnn.utils import Dataset
 
 
 def _read_image_opencv(path):
@@ -80,7 +87,8 @@ class SartoriusDataset:
             image = _read_image(image_path, self.image_parse_shape)
             image = tf.cast(image, tf.float32) / 255.
 
-            mask = _read_image(mask_path, self.mask_parse_shape, dtype=tf.uint16)
+            mask = _read_image(
+                mask_path, self.mask_parse_shape, dtype=tf.uint16)
             mask = tf.cast(mask, tf.int32)
 
             return image, mask
@@ -109,3 +117,47 @@ class SartoriusDataset:
 
     def batch_dataset(self, dataset: tf.data.Dataset):
         return dataset.batch(self.batch_size)
+
+
+class SartoriusDetectionDataset(Dataset):
+    def load_sartorius_dataset(self, dataset_dir: Path, embeddings=True):
+        ext = 'npy' if embeddings else 'png'
+        paths = dataset_dir.glob(f'*.{ext}')
+
+        self.embeddings = embeddings
+
+        for idx, path in enumerate(paths):
+            mask_path = str(path).replace(f'.{ext}', '_mask.tif')
+
+            self.add_image(
+                "sartorius",
+                image_id=idx,
+                path=str(path),
+                mask_path=mask_path
+            )
+
+        self.add_class("sartorius", 1, "cell")
+
+    def load_image(self, image_id):
+        path = self.image_info[image_id]['path']
+
+        if self.embeddings:
+            return np.load(path)
+
+        image = cv2.imread(path, cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR)
+        image = image.astype(np.float32) / 255.
+
+        return image
+
+    def load_mask(self, image_id):
+        path = self.image_info[image_id]['mask_path']
+
+        mask_gen = cv2.imread(path, cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR)
+
+        labels = []
+        for label in range(1, mask_gen.max() + 1):
+            labels.append(mask_gen == label)
+
+        mask = np.stack(labels, axis=-1)
+
+        return mask, np.ones([mask.shape[-1]], dtype=np.int32)
