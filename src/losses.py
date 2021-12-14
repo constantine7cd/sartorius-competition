@@ -1,6 +1,8 @@
 from functools import partial
 
+import numpy as np
 import tensorflow as tf
+from skimage.measure import regionprops
 from tensorflow.python.keras.losses import LossFunctionWrapper
 
 
@@ -137,14 +139,13 @@ def contrastive_loss_on_patches(y_true, y_pred,
 
 
 def random_choice(x, sample_size):
-    # TODO: test it
     n = tf.shape(x)[0]
     indices = tf.random.shuffle(tf.range(n))[:sample_size]
 
     return tf.gather(x, indices)
 
 
-def pad_bboxes(bboxes, pad):
+def pad_bboxes(bboxes, pad, shape):
     """
     :param bboxes: tensor of shape [B, 4], where each
         bbox is defined as min_row, min_col, max_row, max_col
@@ -152,68 +153,145 @@ def pad_bboxes(bboxes, pad):
     :return: tensor of shape [B, 4], padded bounding boxes
     """
 
-    min_row, min_col, max_row, max_col = tf.unstack(bboxes, axis=-1)
+    h, w = shape
 
-    bboxes_pad = tf.stack([
-        min_row - pad,
-        min_col - pad,
-        max_row + pad,
-        max_col + pad
+    min_row, min_col, max_row, max_col = tf.unstack(
+        bboxes[:, None, :], axis=-1)
+
+    bboxes_pad = tf.concat([
+        tf.clip_by_value(min_row - pad, 0, h),
+        tf.clip_by_value(min_col - pad, 0, w),
+        tf.clip_by_value(max_row + pad, 0, h),
+        tf.clip_by_value(max_col + pad, 0, w)
     ], axis=-1)
 
     return bboxes_pad
 
 
-def cut_bboxes(bboxes, max_area, shape):
-    def select_random_sub_bbox(bbox, max_are):
-        # Possible variants:
-        # Select by left side, by right, by top and by bottom
+# def cut_bboxes(bboxes, max_area, shape):
+#     def select_random_sub_bbox(bbox, max_are):
+#         # Possible variants:
+#         # Select by left side, by right, by top and by bottom
 
-        index = tf.random.uniform([], maxval=4)
+#         index = tf.random.uniform([], maxval=4)
 
-        # TODO: finish this part
+#         # TODO: finish this part
 
-    bbox_areas = (bboxes[:, 3] - bboxes[:, 1]) * (bboxes[:, 3] - bboxes[:, 1])
+#     bbox_areas = (bboxes[:, 3] - bboxes[:, 1]) * (bboxes[:, 3] - bboxes[:, 1])
 
-    pass
+#     pass
 
 
-def build_mask_from_bboxes(shape, bboxes):
+def _subsample_mask(mask, max_area):
+    mask_area = tf.reduce_sum(tf.cast(mask, tf.float32))
+
+    if mask_area < max_area:
+        return mask
+
+    p_sample = max_area / mask_area
+
+    mask_subsample = tf.random.uniform(tf.shape(mask)) <= p_sample
+
+    return tf.logical_and(mask, mask_subsample)
+
+
+def _build_mask_from_bbox(shape, bbox):
     h, w = shape
 
-    def build_indices(x_coord, y_coord):
-        pass
+    def build_indices():
+        min_row, min_col, max_row, max_col = tf.unstack(bbox, axis=-1)
+
+        y_coords = tf.range(min_row, max_row, dtype=tf.int64)
+        x_coords = tf.range(min_col, max_col, dtype=tf.int64)
+
+        xx, yy = tf.meshgrid(x_coords, y_coords)
+        indices = tf.concat(
+            [flatten(yy)[:, None], flatten(xx)[:, None]], axis=-1)
+
+        return indices
 
     indices = build_indices()
     mask = tf.SparseTensor(indices,
-                           tf.ones(indices.shape[0], dtype=tf.bool),
+                           tf.ones(tf.shape(indices)[0], dtype=tf.bool),
                            [h, w])
 
     return tf.sparse.to_dense(mask)
 
 
-def _generate_bboxes_mask(shape, bboxes, bbox_pad,
-                          max_bbox_area, num_bboxes):
+def _generate_bbox_mask(shape, bboxes, bbox_pad,
+                        max_bbox_area, num_bboxes=1):
+    """
+        returns: tf.tensor of shape [h, w, 1]
+    """
 
     bboxes_sample = random_choice(bboxes, num_bboxes)
-    bboxes_pad = pad_bboxes(bboxes_sample, bbox_pad)
-    bboxes_cut = cut_bboxes(bboxes_pad, max_bbox_area, shape)
-    mask = build_mask_from_bboxes(shape, bboxes_cut)
+    bboxes_pad = pad_bboxes(bboxes_sample, bbox_pad, shape)
+
+    mask = _build_mask_from_bbox(shape, bboxes_pad[0])
+    mask = _subsample_mask(mask, max_bbox_area)
 
     return mask
+
+
+def _py_compute_bboxes(segmentation):
+    rprops = regionprops(segmentation)
+    bboxes = [rprop.bbox for rprop in rprops]
+    bboxes = np.array(bboxes, dtype=np.int32)
+
+    return bboxes
+
+
+@tf.function
+def _tf_compute_bboxes(segmentation):
+    bboxes = tf.numpy_function(
+        _py_compute_bboxes,
+        [tf.squeeze(segmentation)],
+        tf.int32
+    )
+
+    return tf.reshape(bboxes, [-1, 4])
 
 
 def contrastive_loss_with_bboxes(
     y_true,
     y_pred,
-    bboxes,
     bbox_pad=4,
     max_bbox_area=8000,
-    num_bboxes_sample=8,
+    num_bboxes_sample=1,
     normalize_preds=True,
-    temperature=0.2,
+    temperature=0.2
 ):
-    pass
+    """
+        Current implementation supports only batch size = 1
+        and one bounding box to sample
+    """
+
+    batch, h, w, _ = tf.unstack(tf.shape(y_true))
+
+    # if batch > 1:
+    #     print(f"batch size: {batch}")
+    #     err = 'only batch size = 1 is supported for now'
+    #     raise NotImplementedError(err)
+
+    if num_bboxes_sample > 1:
+        err = 'multiple bounding boxes support not implemented yet'
+        raise NotImplementedError(err)
+
+    if normalize_preds:
+        y_pred = tf.nn.l2_normalize(y_pred, axis=-1)
+
+    bboxes = _tf_compute_bboxes(y_true)
+    mask = _generate_bbox_mask(
+        (h, w),
+        bboxes,
+        bbox_pad,
+        max_bbox_area,
+        num_bboxes_sample
+    )
+
+    loss = _contrastive_loss(y_true[0], y_pred[0], mask, temperature)
+
+    return loss
 
 
 def _sample_indices(min_idx, max_idx, num_samples, replace=False):
@@ -335,6 +413,27 @@ class ContrastiveLossOnPatches(LossFunctionWrapper):
         )
 
 
+class ContrastiveLossWithBboxes(LossFunctionWrapper):
+    def __init__(
+        self,
+        normalize_preds=True,
+        temperature=0.2,
+        bbox_pad=5,
+        max_bbox_area=10000,
+        num_bboxes_sample=1
+    ):
+        super().__init__(
+            contrastive_loss_with_bboxes,
+            reduction=tf.keras.losses.Reduction.NONE,
+            name='ContrastiveLossWithBboxes',
+            normalize_preds=normalize_preds,
+            temperature=temperature,
+            bbox_pad=bbox_pad,
+            max_bbox_area=max_bbox_area,
+            num_bboxes_sample=num_bboxes_sample
+        )
+
+
 class ContrastiveLossWithContours(LossFunctionWrapper):
     def __init__(
         self,
@@ -349,4 +448,27 @@ class ContrastiveLossWithContours(LossFunctionWrapper):
             normalize_preds=normalize_preds,
             temperature=temperature,
             num_cells_sample=num_cells_sample
+        )
+
+
+class ContrastiveLossPatchesContours(LossFunctionWrapper):
+    def __init__(
+        self,
+        normalize_preds=True,
+        temperature=0.2,
+        window_size=85,
+        num_cells_sample=10
+    ):
+        loss_patches = ContrastiveLossOnPatches(
+            normalize_preds, temperature, window_size)
+        loss_contours = ContrastiveLossWithContours(
+            normalize_preds, temperature, num_cells_sample)
+
+        def loss_fn(y_true, y_pred):
+            return loss_patches(y_true, y_pred) + loss_contours(y_true, y_pred)
+
+        super().__init__(
+            loss_fn,
+            reduction=tf.keras.losses.Reduction.NONE,
+            name='ContrastiveLossPatchesContours'
         )
